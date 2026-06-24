@@ -1,75 +1,274 @@
-# Robot: A Local AI & AppleScript Backyard Audio Assistant
+# Robot: a local AI deck music assistant
 
-"Robot" is a Mac Mini-powered home automation hub that orchestrates multi-room outdoor audio and automates YouTube media playback using a local LLM, AppleScript, and native iOS Apple Shortcuts. 
+I wanted one-tap deck music from my phone, watch, or laptop — powered by a local LLM on a Mac mini.
 
-It is beautifully hacky, entirely local-first, subscription-free, and handles home automation without a single byte of telemetry leaving my local network.
+So I built **Robot**, a home-lab music assistant that combines **Open WebUI + Ollama + Flask + AppleScript + Airfoil + Chrome + Apple Shortcuts**.
 
-## The Main Breakthrough
+Now I can say or tap **“Play Deck Music”** and Robot:
 
-I can say or tap “Play Deck Music” from an iPhone, Mac, or local chat interface, and Robot automatically executes the entire physical and visual staging sequence:
-1. Connects the Backyard speakers via Rogue Amoeba's Airfoil.
-2. Opens a curated YouTube playlist in Google Chrome on the host machine.
-3. Injects native JavaScript into Chrome to click the YouTube “Play all” button automatically.
+1. Connects my **Backyard** speakers in Airfoil
+2. Opens my **Deck Music** YouTube playlist in Chrome
+3. Clicks YouTube’s **Play all** button via injected JavaScript
+4. Starts music outside
+5. Lets me pause, skip, or shut everything off from my phone, watch, or Open WebUI
 
-## The Architecture
-
-[ iPhone Safari / Apple Shortcuts / Raycast ] (LAN: 192.168.1.56:5055)
-                                │
-                                ▼
- [ Open WebUI / Colima Container ] ──(host.docker.internal:5055)──► [ Flask API (Port 5055) ]
-                                                                             │
-                                                                       (subprocess.Popen)
-                                                                             │
-                                                                             ▼
-                                                                     [ Shell Scripts ]
-                                                                             │
-                                                                             ▼
-                                                                     [ AppleScript ]
-                                                                       /         \
-                                                                      ▼           ▼
-                                                            [ Airfoil ]       [ Google Chrome ]
-                                                            (Route Audio)     (Inject JS: "Play All")
-                                                                  │               │
-                                                                  ▼               ▼
-                                                          [ Deck Speakers ] ◄── [ YouTube Audio Stream ]
-
-## The Stack
-
-- **Core Brain:** Mac Mini running Ollama (qwen3:8b / qwen2.5 variants)
-- **UI & Chat Environment:** Open WebUI running via Docker/Colima
-- **The Translation Layer:** Python Flask (macOS user space)
-- **The Puppet Master:** AppleScript & Shell scripting
-- **The Hardware & Software Targets:** Rogue Amoeba Airfoil + Google Chrome + YouTube + Raspberry Pi (Shairport Sync)
+![Robot deck setup](README-assets/IMG_4423.jpg)
 
 ---
 
-## Core Lessons Learned & Architectural Hacks
+## What it does
 
-### 1. Eliminating Wi-Fi Jitter: The Hardwired Advantage
-A massive pain point with consumer outdoor audio (like casting directly from a phone via standard AirPlay) is wireless instability. Walking around a yard with a phone in your pocket routinely causes audio dropouts due to distance, physical obstructions, or hands blocking the device antenna.
+Robot currently supports:
 
-"Robot" completely solves this by keeping the heavy-lifting media pipeline entirely on the wire. The Mac Mini is hardwired into the core network switch, and the Raspberry Pi (running Shairport Sync) inside the outdoor deck box is also hardwired back to the switch via Cat6 copper. 
+* **Play Deck Music**
+* **Play/Pause Music**
+* **Next Track**
+* **Turn on Backyard speakers**
+* **Turn on Backyard + Living Room speakers**
+* **Turn off Backyard**
+* **Turn off all speakers**
+* **List Airfoil speakers**
 
-When music plays, the audio packets never travel through the air to reach the speakers. The phone or Open WebUI chat acts strictly as a lightweight, zero-bandwidth remote control interface. You can walk anywhere on the property, move behind brick walls, or turn off your phone entirely, and the audio never stutters or drops.
+The fun part is that there are **multiple ways to control the same system**:
 
-### 2. Slower Scripts Block iOS Shortcuts (Asynchronous Execution)
-Running a macro sequence that launches Chrome, routes physical audio zones, and injects JavaScript takes a few seconds to complete. Apple Shortcuts hates waiting for HTTP responses and will routinely time out and throw an error if an endpoint blocks. 
+* **Open WebUI chat** (`"Play deck music"`)
+* **Apple Shortcuts** on iPhone / Apple Watch
+* **Raycast** shortcut to open Robot from Mac
+* direct HTTP calls to Flask for testing/debugging
 
-Pivoting the Flask backend from a standard blocking call to an asynchronous pattern using subprocess.Popen() solved this perfectly. The Flask API immediately replies with a 200 OK "Success!" status to the phone, allowing the iOS widget to close instantly while the Mac Mini continues spinning up the execution scripts in the background.
+---
 
-### 3. The Chrome JavaScript Injection Hack
-Bypassing complex OAuth API authentication layers for media platforms is a massive headache for small personal hobby projects. Instead of dealing with API tokens, AppleScript instructs Google Chrome to open a specific, curated public playlist URL and executes a simple query selector to programmatically hit the "Play All" button:
+## Architecture
 
-document.querySelector('[aria-label="Play all"]').click()
+At a high level, the system looks like this:
 
-### 4. Network Topology Matrix (0.0.0.0 vs 127.0.0.1)
-I originally bound the Flask API to localhost (127.0.0.1). It worked flawlessly from the Mac itself and from the container environment (via host.docker.internal), but outside devices couldn't discover it. Binding the daemon to 0.0.0.0 opened up the necessary LAN access so physical phone widgets and container triggers could coexist seamlessly using three distinct URL routing patterns:
+```text
+Apple Shortcut / Open WebUI / Raycast
+                ↓
+            Flask API
+                ↓
+      shell scripts + AppleScript
+                ↓
+    Airfoil + Chrome + YouTube
+                ↓
+ Backyard / Living Room / Deck speakers
+```
 
-* Robot Self-Control: http://127.0.0.1:5055
-* Open WebUI Container Egress: http://host.docker.internal:5055
-* iPhone / Apple Shortcuts / LAN Devices: http://192.168.1.56:5055
+### In practice
 
-### 5. UI Modality: The Hybrid Reality
-While controlling everything via a local LLM chat interface is incredibly cool, forcing yourself to open a chat bubble and type text just to skip a track while hanging out on the deck is terrible UX. 
+* **Open WebUI** runs on the Mac mini and exposes tool calls like `play_deck_music()`
+* those tool calls hit a **Flask API** running on port `5055`
+* Flask routes trigger **shell scripts**
+* shell scripts use **AppleScript** to control **Airfoil** and **Google Chrome**
+* Chrome opens a YouTube playlist and executes JavaScript to click **Play all**
+* Airfoil handles routing the audio to the correct speakers
 
-True home automation harmony means using the LLM for complex, context-aware initial staging ("Set up the deck music for a party") and relying on native Apple Shortcuts on the iPhone home screen or Raycast on the Mac for fast, tactical adjustments (Play/Pause, Next Track, All Off).
+---
+
+## Hardware / setup
+
+The current backyard setup includes:
+
+* **Mac mini (“Robot”)** — local AI + automation brain
+* **Klipsch outdoor speakers** mounted under the eaves
+* **Airfoil** for audio routing
+* **Google Chrome** as the playback source
+* **Deck box** housing parts of the outdoor audio setup
+* **Apple Shortcuts** on iPhone / Apple Watch for quick controls
+
+Inside the deck box I’ve got a collection of audio gear, cabling, power, and ventilation. It’s not a polished product build — it’s a home-lab / backyard system that became genuinely useful.
+
+![Inside the deck box](README-assets/IMG_4424.jpg)
+
+---
+
+## Key idea: AI doesn’t choose the music
+
+One design choice I like is that Robot does **not** try to become a DJ.
+
+I still curate the playlist myself from my phone. Robot’s job is the activity layer:
+
+* route the right speakers
+* open the right playlist
+* start playback
+* pause / skip / shut it all down
+
+That keeps the system simple and makes it feel more reliable.
+
+---
+
+## Example controls
+
+### Open WebUI
+
+Examples of commands I can give Robot:
+
+* `"Play deck music"`
+* `"Pause the music"`
+* `"Skip this song"`
+* `"Turn on the backyard and living room"`
+* `"Turn everything off"`
+
+### Apple Shortcuts
+
+I currently have shortcuts like:
+
+* 🎵 **Play Deck Music**
+* ⏯ **Play/Pause Music**
+* ⏭ **Next Track**
+* 🔇 **All Off**
+* 🤖 **Robot** (opens Open WebUI)
+
+### Raycast
+
+I also have a Raycast command that opens Robot instantly from my Mac.
+
+---
+
+## Networking lessons learned
+
+One subtle but important lesson was **where Flask is listening**.
+
+Originally I had Flask running like this:
+
+```python
+app.run(host="127.0.0.1", port=5055)
+```
+
+That worked from the Mac mini itself and from Open WebUI running in Docker, but **did not work from iPhone Safari / Apple Shortcuts**.
+
+Changing to:
+
+```python
+app.run(host="0.0.0.0", port=5055)
+```
+
+allowed devices on my LAN to reach the API at:
+
+```text
+http://192.168.x.x:5055
+```
+
+That was the key to getting Apple Shortcuts working.
+
+### The three URLs that matter
+
+Depending on where the request originates:
+
+* **Robot itself**
+  `http://127.0.0.1:5055`
+
+* **Open WebUI container**
+  `http://host.docker.internal:5055`
+
+* **iPhone / Apple Shortcuts / other LAN devices**
+  `http://192.168.x.x:5055`
+
+That ended up being one of the most useful “glue code” lessons in the project.
+
+---
+
+## API design lesson: long-running actions should return quickly
+
+Some actions — especially **Play Deck Music** — are slow by nature:
+
+* turn on Airfoil speakers
+* open Chrome
+* load the playlist
+* click **Play all**
+* wait for music to start
+
+For Apple Shortcuts, it’s better if those endpoints return immediately and let the work continue in the background. In practice, that means using `subprocess.Popen()` for long-running routes rather than blocking on `subprocess.run()`.
+
+For example, the `play_pause` route looks like this:
+
+```python
+@app.route("/music/play_pause", methods=["POST"])
+def play_pause():
+    subprocess.Popen(
+        [SCRIPTS["play_pause_music"]],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    return jsonify({
+        "action": "play_pause_music",
+        "status": "started"
+    })
+```
+
+---
+
+## What’s hacky
+
+Plenty.
+
+* This is very much a **Mac mini + scripts + AppleScript + local AI** project, not a polished product
+* YouTube automation is inherently a little brittle
+* local models sometimes need a nudge to use the tool instead of talking about the tool
+* the deck box contains a bunch of real-world compromise and “figure it out as you go” engineering
+
+But that’s also why I like it. It’s not pretending to be a smart home platform — it’s a useful, very personal home-lab system.
+
+---
+
+## What’s next
+
+A few ideas I want to explore next:
+
+* volume up / volume down
+* better “what’s currently playing?” support
+* more robust multi-zone presets
+* tighter Apple Watch controls
+* physical buttons outside
+* better prompting / tool descriptions so the local model chooses the right tool more reliably
+
+---
+
+## Why I built it
+
+Because I wanted a computer in my house that does something actually useful.
+
+Not “summarize the internet.”
+Not “answer generic questions.”
+Just:
+
+> **turn on the deck music and make the backyard feel alive**
+
+And now it does.
+
+---
+
+## Repo structure
+
+Example layout:
+
+```text
+robot-actions/
+├── airfoil/
+│   ├── backyard-chrome-on.sh
+│   ├── backyard-living-room-on.sh
+│   ├── backyard-off.sh
+│   ├── all-off.sh
+│   ├── play-deck-music.sh
+│   ├── play-pause-music.sh
+│   └── next-track.sh
+├── server/
+│   └── airfoil_server.py
+└── README-assets/
+    ├── deck-wide.jpg
+    └── deck-box-inside.jpg
+```
+
+---
+
+## Notes for anyone adapting this
+
+If you want to build something similar, I’d recommend:
+
+* keep your playlist URL in an environment variable or config file
+* separate **fast controls** (Shortcuts) from **flexible controls** (chat)
+* make the AI control **activities**, not everything
+* expect a bit of glue work between networking, browser automation, and audio routing
+
+If you’re a home-lab person, that’s half the fun anyway.
