@@ -14,6 +14,10 @@ Now I can say or tap **“Play Deck Music”** and Robot:
 
 ![Robot deck setup](./README-assets:/IMG_4423.jpg)
 
+## Deck playback behavior
+
+The original implementation opened the deck playlist in a new Chrome tab on every run, which quickly led to a pile of duplicate tabs. I briefly experimented with trying to detect and reuse an existing playlist tab, but the simpler and more reliable solution was to just reuse the active tab in Chrome window 1, load the playlist there, and click “Play all.”
+
 ---
 
 ## What it does
