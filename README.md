@@ -12,7 +12,7 @@ Now I can say or tap **“Play Deck Music”** and Robot:
 4. Starts music outside
 5. Lets me pause, skip, or shut everything off from my phone, watch, or Open WebUI
 
-![Robot deck setup](README-assets/IMG_4423.jpg)
+![Robot deck setup](./README-assets:/IMG_4423.jpg)
 
 ---
 
@@ -78,7 +78,7 @@ The current backyard setup includes:
 
 Inside the deck box I’ve got a collection of audio gear, cabling, power, and ventilation. It’s not a polished product build — it’s a home-lab / backyard system that became genuinely useful.
 
-![Inside the deck box](README-assets/IMG_4424.jpg)
+![Inside the deck box](./README-assets:/IMG_4424.jpg)
 
 ---
 
